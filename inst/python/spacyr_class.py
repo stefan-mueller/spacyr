@@ -1,24 +1,19 @@
-#!/usr/local/bin/python
-
+# -*- coding: utf-8 -*-
 # Sources:
 #  Google universal: http://www.petrovi.de/data/universal.pdf
 #  Penn treebank: http://web.mit.edu/6.863/www/PennTreebankTags.html
 # Requires installation of spaCy: https://honnibal.github.io/spaCy/
-#
-# written by Paul Nulty, 19 March 2015
-
-# from __future__ import unicode_literals 
+from __future__ import unicode_literals 
 import os
 import sys
-import argparse
-import codecs
-import spacy.en
-from spacy.parts_of_speech import *
-from spacy.lemmatizer import Lemmatizer
-import re
+import spacy
 import time
+import gc
+import string
+import random
 
-nlp = spacy.en.English()
+def id_generator(size=10, chars=string.ascii_uppercase + string.digits):
+    return ''.join(random.choice(chars) for _ in range(size))
 
 
 class spacyr:
@@ -26,22 +21,19 @@ class spacyr:
         self.nlp = nlp
         self.documents = {}
     
-    def parse(self, texts, tokenize_only):
+    def parse(self, texts):
         epoch_nanos = []
         if isinstance(texts, list) == False:
             texts = [texts]
         for text in texts:
-            epoch_nano = str(int(time.time() * 1000000))
+            epoch_nano = str(int(time.time() * 1000000)) + id_generator()
             #text = text.decode('utf-8')
             try: 
                 if not isinstance(text, unicode):
-                    text = unicode(text, errors = 'ignore')
+                    text = unicode(text, "utf-8", errors = "ignore")
             except NameError:
                 pass
-            if tokenize_only == 0:
-                doc = self.nlp(text)
-            else:
-                doc = self.nlp.tokenizer(text)
+            doc = self.nlp(text)
             self.documents[epoch_nano] = doc
             epoch_nanos.append(epoch_nano)
         return epoch_nanos 
@@ -54,8 +46,20 @@ class spacyr:
             c_document = self.documents[ts]
             ntok.append(len(c_document))
         return ntok
+
+    def ntokens_by_sent(self, timestamps):
+        ntok_by_sent = []
+        if isinstance(timestamps, list) == False:
+            timestamps = [timestamps]
+        for ts in timestamps:
+            c_document = self.documents[ts]
+            ntok_in_sent = []
+            for sent in c_document.sents:
+                ntok_in_sent.append(len(sent))
+            ntok_by_sent.append(ntok_in_sent)
+        return ntok_by_sent
         
-    def attributes(self, timestamps, attrname):
+    def attributes(self, timestamps, attrname, deal_utf8 = 0):
         all_attrs = []
         if isinstance(timestamps, list) == False:
             timestamps = [timestamps]
@@ -65,16 +69,34 @@ class spacyr:
             for w in c_document:
                 attrs.append(getattr(w, attrname))
             all_attrs.extend(attrs)
+        if deal_utf8 == 1:
+            if sys.version_info.major == 2:
+                for i in range(len(all_attrs)):
+                    all_attrs[i] = all_attrs[i].encode('utf-8')
+        return all_attrs
+        
+    def attributes_by_sent(self, timestamps, attrname):
+        all_attrs = []
+        if isinstance(timestamps, list) == False:
+            timestamps = [timestamps]
+        for ts in timestamps:
+            c_document = self.documents[ts]
+            attrs = []
+            for sent in c_document.sents:
+                for w in sent:
+                    attrs.append(getattr(w, attrname))
+                all_attrs.extend(attrs)
         return all_attrs
     
     def tokens(self, timestamps):
-        all_tokens = self.attributes(timestamps, 'orth_')
+        all_tokens = self.attributes(timestamps, 'orth_', 1)
         return all_tokens
+
         
     def tags(self, timestamps, tag_type):
         if isinstance(timestamps, list) == False:
             timestamps = [timestamps]
-        attr_name = "tag_" if tag_type == "penn" else "pos_"
+        attr_name = "tag_" if tag_type == "detailed" else "pos_"
         all_tokens = self.attributes(timestamps, attr_name)
         return all_tokens
         
@@ -116,8 +138,9 @@ class spacyr:
         for ts in timestamps:
             c_document = self.documents[ts]
             head_ids = []
-            for w in c_document:
-                head_ids.append(w.head.i)
+            for sent in c_document.sents:
+                for w in sent:
+                    head_ids.append(w.head.i)
             all_head_ids.extend(head_ids)
         return all_head_ids
 
